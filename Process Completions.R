@@ -22,12 +22,13 @@
 #' 
 #' @param IPEDS.ID vector of IPEDS IDs for universities of interest. 
 #' @param department.CIP the CIP code for a department with decimals removed. 
+#' @param deg_type type of degree that is of interest.
 #' @param data_directory directory of downloaded data.
 #' @param full.data if TRUE, gathers the complete range of data (i.e. 1984-2020). 
 #' If FALSE, only the range 2000-2020 is gathered.
 #' 
 #' @examples
-#' degrees_awarded()
+#' degrees_awarded(deg_type = "doctorate", full.data = TRUE)
 #' 
 degrees_awarded <- function (IPEDS.ID = c(110635), 
                              department.CIP = 230101, 
@@ -300,6 +301,3 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
   }
   total_degs %>% arrange(-year)
 }
-
-zzz <- degrees_awarded(deg_type = "doctorate", full.data = TRUE)
-zzz
