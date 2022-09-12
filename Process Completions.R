@@ -37,17 +37,24 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
 
   deg_type = match.arg(deg_type)
   
-  if (deg_type == "bachelors") {awlevel = 5} else 
-    if (deg_type == "masters") {awlevel = 7} else 
-    if (deg_type == "doctorate") {awlevel = c(17, 18, 19)} else
-    {awlevel = c(5, 7, 17, 18, 19)}
-
+  if (deg_type == "bachelors") {aw_level = 5} else 
+    if (deg_type == "masters") {aw_level = 7} else 
+    if (deg_type == "doctorate") {aw_level = c(17, 18, 19)} else
+    {aw_level = c(5, 7, 17, 18, 19)}
+  
+  # create an empty data frame if a year returns no results
+  empty_df <- function(id, year) {
+    df = data.frame(UNITID = id, 
+                    n.students = rep(0,length(id)),
+                    year = rep(year,length(id)))
+  }
+  
   # ----------------------------------------------------------------------
   # 2011 - 2020
   # ----------------------------------------------------------------------
-  total_degs <- data.frame(matrix(ncol = 2+length(IPEDS.ID), nrow = 0))
+  total_degs <- data.frame(matrix(ncol = 3, nrow = 0))
   
-  for (y in c(2020:2011)){
+  for (y in c(2011:2020)){
     file_name <- paste0(data_directory, "c", 
                         as.character(y), "_a_data_stata.csv")
     df <- data.table::fread(file = file_name, 
@@ -57,12 +64,14 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
     df <- df %>%
       dplyr::filter(UNITID %in% IPEDS.ID,
                     CIPCODE == department.CIP,  
-                    AWLEVEL %in% awlevel)  %>% # code for bachelor's degree
+                    AWLEVEL %in% aw_level)  %>% # code for bachelor's degree
       dplyr::group_by(UNITID) %>%
       # Var definition (CTOTAL): Grand total
       dplyr::summarise(n.students = sum(CTOTALT)) %>%
       dplyr::mutate(year = y)
     
+    # if no results are returned (empty df), return a data frame with 0 students
+    if (nrow(df) == 0) {df = empty_df(IPEDS.ID, y)}
     total_degs <- rbind(total_degs, df)
   }
   
@@ -72,9 +81,9 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
   # Note that before 2011, doctoral degrees are classified under the award
   # level 9. See https://nces.ed.gov/ipeds/report-your-data/data-tip-sheet-reporting-graduate-awards
   # for more. 
-  if (deg_type == "doctorate") {awlevel = c(9)}
+  if (deg_type == "doctorate") {aw_level = c(9)}
   
-  for (y in c(2010:2008)){
+  for (y in c(2008:2010)){
     file_name <- paste0(data_directory, "c", 
                         as.character(y), "_a_data_stata.csv")
     df <- data.table::fread(file = file_name, 
@@ -84,12 +93,14 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
     df <- df %>%
       dplyr::filter(UNITID %in% IPEDS.ID,
                     CIPCODE == department.CIP,  
-                    AWLEVEL %in% awlevel) %>%
+                    AWLEVEL %in% aw_level) %>%
       dplyr::group_by(UNITID) %>%
       # Var definition (CTOTAL): Grand total
       dplyr::summarise(n.students = sum(CTOTALT)) %>%
       dplyr::mutate(year = y)
     
+    # if no results are returned (empty df), return a data frame with 0 students
+    if (nrow(df) == 0) {df = empty_df(IPEDS.ID, y)}
     total_degs <- rbind(total_degs, df)
   }
   
@@ -97,7 +108,7 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
   # 2003 - 2007
   # ----------------------------------------------------------------------
   
-  for (y in c(2007:2003)) {
+  for (y in c(2003:2007)) {
     file_name <- paste0(data_directory, "c",  
                         as.character(y), "_a_data_stata.csv")
     df <- data.table::fread(file = file_name, 
@@ -112,13 +123,15 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
     df <- df %>%
       dplyr::filter(UNITID %in% IPEDS.ID,
                     CIPCODE == department.CIP,  
-                    AWLEVEL %in% awlevel) %>% 
+                    AWLEVEL %in% aw_level) %>% 
       dplyr::group_by(UNITID) %>%
       # Var definition (CRACE24): Awards/degrees conferred to all recipients, 
       # across all race/ethnicity and both genders
       dplyr::summarise(n.students = sum(CRACE24)) %>%
       dplyr::mutate(year = y)
     
+    # if no results are returned (empty df), return a data frame with 0 students
+    if (nrow(df) == 0) {df = empty_df(IPEDS.ID, y)}
     total_degs <- rbind(total_degs, df)
   }
   
@@ -133,20 +146,22 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
   df <- df %>%
     dplyr::filter(UNITID %in% IPEDS.ID,
                   CIPCODE == department.CIP,  
-                  AWLEVEL %in% awlevel) %>%
+                  AWLEVEL %in% aw_level) %>%
     dplyr::group_by(UNITID) %>%
     # Var definition (CRACE24): Awards/degrees conferred to all recipients, 
     # across all race/ethnicity and both genders
     dplyr::summarise(n.students = sum(CRACE24)) %>%
     dplyr::mutate(year = 2002)
   
+  # if no results are returned (empty df), return a data frame with 0 students
+  if (nrow(df) == 0) {df = empty_df(IPEDS.ID, y)}
   total_degs <- rbind(total_degs, df)
 
   # ----------------------------------------------------------------------
   # 2000 - 2001
   # ----------------------------------------------------------------------
   
-  for (y in c(2001:2000)) {
+  for (y in c(2000:2001)) {
     file_name <- paste0(data_directory, "c",  
                         as.character(y), "_a_data_stata.csv")
     df <- data.table::fread(file = file_name, 
@@ -156,7 +171,7 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
     df <- df %>%
       dplyr::filter(unitid %in% IPEDS.ID,
                     cipcode == department.CIP,  
-                    awlevel %in% awlevel) %>%
+                    awlevel %in% aw_level) %>%
       dplyr::group_by(unitid) %>%
       # Var definition (CRACE15): Grand total men
       # Var definition (CRACE16): Grand total women
@@ -164,7 +179,9 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
       # match case of unitid so that `rbind` works
       dplyr::rename(UNITID = unitid) %>%
       dplyr::mutate(year = y)
-    
+
+    # if no results are returned (empty df), return a data frame with 0 students
+    if (nrow(df) == 0) {df = empty_df(IPEDS.ID, y)}
     total_degs <- rbind(total_degs, df)
   }
   
@@ -174,10 +191,10 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
   
   if(full.data){
     # ----------------------------------------------------------------------
-    # 1995 -1999
+    # 1995 - 1999
     # ----------------------------------------------------------------------
     
-    for (y in c(99:95)) {
+    for (y in c(95:99)) {
       file_name <- paste0(data_directory, "c",  
                           as.character(y-1), as.character(y), "_a_data_stata.csv")
       df <- data.table::fread(file = file_name, 
@@ -187,15 +204,17 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
       df <- df %>%
         dplyr::filter(unitid %in% IPEDS.ID,
                       cipcode == department.CIP,  
-                      awlevel %in% awlevel) %>%
+                      awlevel %in% aw_level) %>%
         dplyr::group_by(unitid) %>%
         # Var definition (CRACE15): Grand total men
         # Var definition (CRACE16): Grand total women
         dplyr::summarise(n.students = sum(crace15) + sum(crace16)) %>%
         # match case of unitid so that `rbind` works
         dplyr::rename(UNITID = unitid) %>%
-        dplyr::mutate(year = y)
+        dplyr::mutate(year = 1900+y)
       
+      # if no results are returned (empty df), return a data frame with 0 students
+      if (nrow(df) == 0) {df = empty_df(IPEDS.ID, 1900+y)}
       total_degs <- rbind(total_degs, df)
     }
     
@@ -203,7 +222,7 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
     # 1991 - 1994
     # ----------------------------------------------------------------------
     
-    for (y in c(1994:1991)) {
+    for (y in c(1991:1994)) {
       file_name <- paste0(data_directory, "c", 
                           as.character(y), "_cip_data_stata.csv")
       df <- data.table::fread(file = file_name, 
@@ -213,7 +232,7 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
       df <- df %>%
         dplyr::filter(unitid %in% IPEDS.ID,
                       cipcode == department.CIP,  
-                      awlevel %in% awlevel) %>%
+                      awlevel %in% aw_level) %>%
         dplyr::group_by(unitid) %>%
         # Var definition (CRACE15): Grand total men
         # Var definition (CRACE16): Grand total women
@@ -222,6 +241,8 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
         dplyr::rename(UNITID = unitid) %>%
         dplyr::mutate(year = y)
       
+      # if no results are returned (empty df), return a data frame with 0 students
+      if (nrow(df) == 0) {df = empty_df(IPEDS.ID, y)}
       total_degs <- rbind(total_degs, df)
     }
     
@@ -236,7 +257,7 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
     df <- df %>%
       dplyr::filter(unitid %in% IPEDS.ID,
                     cipcode == department.CIP,  
-                    awlevel %in% awlevel) %>%
+                    awlevel %in% aw_level) %>%
       dplyr::group_by(unitid) %>%
       # Var definition (CRACE15): Grand total men
       # Var definition (CRACE16): Grand total women
@@ -245,6 +266,8 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
       dplyr::rename(UNITID = unitid) %>%
       dplyr::mutate(year = 1990)
     
+    # if no results are returned (empty df), return a data frame with 0 students
+    if (nrow(df) == 0) {df = empty_df(IPEDS.ID, 1990)}
     total_degs <- rbind(total_degs, df)
     
     # ----------------------------------------------------------------------
@@ -259,10 +282,10 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
                              '"H"', '"J"', '"K"', '"L"', '"N"',
                              '"P"', '"R"', '"Z"', "NA"))
       df <- df %>%
-        dplyr::filter(UNITID %in% IPEDS.ID,
-                      CIPCODE == department.CIP,  
-                      AWLEVEL %in% awlevel) %>%
-        dplyr::group_by(UNITID) %>%
+        dplyr::filter(unitid %in% IPEDS.ID,
+                      cipcode == department.CIP,  
+                      awlevel %in% aw_level) %>%
+        dplyr::group_by(unitid) %>%
         # Var definition (CRACE15): Grand total men
         # Var definition (CRACE16): Grand total women
         dplyr::summarise(n.students = sum(crace15) + sum(crace16)) %>%
@@ -270,10 +293,13 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
         dplyr::rename(UNITID = unitid) %>%
         dplyr::mutate(year = y)
       
+      # if no results are returned (empty df), return a data frame with 0 students
+      if (nrow(df) == 0) {df = empty_df(IPEDS.ID, y)}
       total_degs <- rbind(total_degs, df)
     }
   }
-  total_degs
+  total_degs %>% arrange(-year)
 }
 
-degrees_awarded(deg_type = "doctorate")
+zzz <- degrees_awarded(deg_type = "doctorate", full.data = TRUE)
+zzz
