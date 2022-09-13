@@ -1,4 +1,11 @@
 # ----------------------------------------------------------------------
+# Preliminaries
+# ----------------------------------------------------------------------
+
+# Suppress summarize info
+options(dplyr.summarise.inform = FALSE)
+
+# ----------------------------------------------------------------------
 # get IDs of schools
 # ----------------------------------------------------------------------
 
@@ -7,16 +14,6 @@ ids <- read.csv("data/NCES_Inst_Details/English PhD granting Universities 2017-1
 ids <- ids %>% 
   dplyr::select(UnitID, Institution.Name) %>%
   dplyr::rename(id = UnitID, name = Institution.Name)
-
-test1 <- function(inst = c("Berkeley")){
-  inst_id <- paste(inst, collapse = "|")
-  inst_id <- ids %>%
-    dplyr::filter(grepl(inst_id, name))
-  
-  if (nrow(inst_id) != length(inst)) stop("`inst` is invalid")
-  print(inst_id)
-}
-test1(c("Berkeley", "Los Angeles"))
 
 # ----------------------------------------------------------------------
 # Total number of degrees awarded by a University's Department per year.
@@ -36,7 +33,7 @@ test1(c("Berkeley", "Los Angeles"))
 #' CIPCODE = 23.0101 (English Language and Literature, General)
 #' AWLEVEL =  5 (Bachelor's Degrees)
 #' 
-#' @param IPEDS.ID vector of IPEDS IDs for universities of interest. 
+#' @param inst name of institution (can be a rough string). 
 #' @param department.CIP the CIP code for a department with decimals removed. 
 #' @param deg_type type of degree that is of interest.
 #' @param data_directory directory of downloaded data.
@@ -47,7 +44,6 @@ test1(c("Berkeley", "Los Angeles"))
 #' degrees_awarded(deg_type = "doctorate", full.data = TRUE)
 #' 
 degrees_awarded <- function (inst = c("Berkeley"),
-                             IPEDS.ID = c(110635), 
                              department.CIP = 230101, 
                              deg_type = c("bachelors", "masters", "doctorate"),
                              data_directory = "data/IPEDS_Completions/",
@@ -55,36 +51,51 @@ degrees_awarded <- function (inst = c("Berkeley"),
   # ----------------------------------------------------------------------
   # Check Inputs
   # ----------------------------------------------------------------------
+  aw_level <- data.frame(aw_level = c(5, 7, 17),
+                         type = c("bachelors", "masters", "doctorate"))
+  aw_level <- dplyr::filter(aw_level, type %in% deg_type)[["aw_level"]]
+  
+  
   inst_id <- paste(inst, collapse = "|")
   inst_id <- ids %>%
     dplyr::filter(grepl(inst_id, name))
   
+  inst_id <- data.frame(short_name = inst) %>%
+    rowwise() %>%
+    mutate(inst_name = ids[["name"]][grep(short_name, ids[["name"]])],
+           id = ids[["id"]][grep(short_name, ids[["name"]])])
+  
   # check that inst_id is as expected
   if (nrow(inst_id) != length(inst)) stop("`inst` is invalid")
   # check if degree type is one of bachelors, masters, or doctorate
-  deg_type = match.arg(deg_type)
+  if(! all(deg_type %in% c("bachelors", "doctorate", "masters"))) stop("check `deg_type`")
   # check if data_directory is a valid directory
   if(!dir.exists(data_directory)) stop("`data_directory` does not exist")
   
   # ----------------------------------------------------------------------
   # Preliminaries
   # ----------------------------------------------------------------------
-  # convert deg_type to aw_level
-  if (deg_type == "bachelors") {aw_level = 5} else 
-    if (deg_type == "masters") {aw_level = 7} else 
-    {aw_level = c(17, 18, 19)}
+  total_degs <- data.frame(matrix(ncol = 4, nrow = 0))
   
-  # create an empty data frame if a year returns no results
-  empty_df <- function(id, year) {
-    df = data.frame(UNITID = id, 
-                    n.students = rep(0,length(id)),
-                    year = rep(year,length(id)))
+  # NEED DOCCUMENTATION
+  fill_missing <- function(df, id, level, year){
+    empty <- DescTools::CombPairs(id, level) %>%
+      mutate(n.students = 0) %>%
+      rename(UNITID = Var1, level = Var2)
+    
+    # handle cases where AWLEVEL column is in lower case
+    df <- rename(df, AWLEVEL = 2)
+    left_join(empty, df, by=c('UNITID'='UNITID', 'level'='AWLEVEL')) %>%
+      dplyr::mutate(n.students.y = replace_na(n.students.y, 0),
+                    year = year) %>%
+      rowwise() %>%
+      dplyr::mutate( n.students = max(n.students.x, n.students.y)) %>%
+      select(-n.students.x, -n.students.y)
   }
-  
+
   # ----------------------------------------------------------------------
   # 2011 - 2020
   # ----------------------------------------------------------------------
-  total_degs <- data.frame(matrix(ncol = 4, nrow = 0))
   
   for (y in c(2011:2020)){
     file_name <- paste0(data_directory, "c", 
@@ -94,16 +105,14 @@ degrees_awarded <- function (inst = c("Berkeley"),
                            '"H"', '"J"', '"K"', '"L"', '"N"',
                            '"P"', '"R"', '"Z"', "NA"))
     df <- df %>%
-      dplyr::filter(UNITID %in% IPEDS.ID,
+      dplyr::filter(UNITID %in% inst_id[["id"]],
                     CIPCODE == department.CIP,  
                     AWLEVEL %in% aw_level)  %>% # code for bachelor's degree
-      dplyr::group_by(UNITID) %>%
+      dplyr::group_by(UNITID, AWLEVEL) %>%
       # Var definition (CTOTAL): Grand total
-      dplyr::summarise(n.students = sum(CTOTALT)) %>%
-      dplyr::mutate(year = y)
+      dplyr::summarise(n.students = sum(CTOTALT))
     
-    # if no results are returned (empty df), return a data frame with 0 students
-    if (nrow(df) == 0) {df = empty_df(IPEDS.ID, y)}
+    df <- fill_missing(df, inst_id[["id"]], aw_level, y)
     total_degs <- rbind(total_degs, df)
   }
   
@@ -113,7 +122,9 @@ degrees_awarded <- function (inst = c("Berkeley"),
   # Note that before 2011, doctoral degrees are classified under the award
   # level 9. See https://nces.ed.gov/ipeds/report-your-data/data-tip-sheet-reporting-graduate-awards
   # for more. 
-  if (deg_type == "doctorate") {aw_level = c(9)}
+  aw_level <- data.frame(aw_level = c(5, 7, 9),
+                         type = c("bachelors", "masters", "doctorate"))
+  aw_level <- dplyr::filter(aw_level, type %in% deg_type)[["aw_level"]]
   
   for (y in c(2008:2010)){
     file_name <- paste0(data_directory, "c", 
@@ -123,16 +134,14 @@ degrees_awarded <- function (inst = c("Berkeley"),
                            '"H"', '"J"', '"K"', '"L"', '"N"',
                            '"P"', '"R"', '"Z"', "NA"))
     df <- df %>%
-      dplyr::filter(UNITID %in% IPEDS.ID,
+      dplyr::filter(UNITID %in% inst_id[["id"]],
                     CIPCODE == department.CIP,  
                     AWLEVEL %in% aw_level) %>%
-      dplyr::group_by(UNITID) %>%
+      dplyr::group_by(UNITID, AWLEVEL) %>%
       # Var definition (CTOTAL): Grand total
-      dplyr::summarise(n.students = sum(CTOTALT)) %>%
-      dplyr::mutate(year = y)
+      dplyr::summarise(n.students = sum(CTOTALT))
     
-    # if no results are returned (empty df), return a data frame with 0 students
-    if (nrow(df) == 0) {df = empty_df(IPEDS.ID, y)}
+    df <- fill_missing(df, inst_id[["id"]], aw_level, y)
     total_degs <- rbind(total_degs, df)
   }
   
@@ -153,17 +162,15 @@ degrees_awarded <- function (inst = c("Berkeley"),
     names(df)[52] <- "CRACE24"
     
     df <- df %>%
-      dplyr::filter(UNITID %in% IPEDS.ID,
+      dplyr::filter(UNITID %in% inst_id[["id"]],
                     CIPCODE == department.CIP,  
                     AWLEVEL %in% aw_level) %>% 
-      dplyr::group_by(UNITID) %>%
+      dplyr::group_by(UNITID, AWLEVEL) %>%
       # Var definition (CRACE24): Awards/degrees conferred to all recipients, 
       # across all race/ethnicity and both genders
-      dplyr::summarise(n.students = sum(CRACE24)) %>%
-      dplyr::mutate(year = y)
+      dplyr::summarise(n.students = sum(CRACE24))
     
-    # if no results are returned (empty df), return a data frame with 0 students
-    if (nrow(df) == 0) {df = empty_df(IPEDS.ID, y)}
+    df <- fill_missing(df, inst_id[["id"]], aw_level, y)
     total_degs <- rbind(total_degs, df)
   }
   
@@ -176,17 +183,15 @@ degrees_awarded <- function (inst = c("Berkeley"),
                          '"H"', '"J"', '"K"', '"L"', '"N"',
                          '"P"', '"R"', '"Z"', "NA"))
   df <- df %>%
-    dplyr::filter(UNITID %in% IPEDS.ID,
+    dplyr::filter(UNITID %in% inst_id[["id"]],
                   CIPCODE == department.CIP,  
                   AWLEVEL %in% aw_level) %>%
-    dplyr::group_by(UNITID) %>%
+    dplyr::group_by(UNITID, AWLEVEL) %>%
     # Var definition (CRACE24): Awards/degrees conferred to all recipients, 
     # across all race/ethnicity and both genders
-    dplyr::summarise(n.students = sum(CRACE24)) %>%
-    dplyr::mutate(year = 2002)
+    dplyr::summarise(n.students = sum(CRACE24))
   
-  # if no results are returned (empty df), return a data frame with 0 students
-  if (nrow(df) == 0) {df = empty_df(IPEDS.ID, y)}
+  df <- fill_missing(df, inst_id[["id"]], aw_level, 2002)
   total_degs <- rbind(total_degs, df)
 
   # ----------------------------------------------------------------------
@@ -201,19 +206,17 @@ degrees_awarded <- function (inst = c("Berkeley"),
                                            '"H"', '"J"', '"K"', '"L"', '"N"',
                                            '"P"', '"R"', '"Z"', "NA"))
     df <- df %>%
-      dplyr::filter(unitid %in% IPEDS.ID,
+      dplyr::filter(unitid %in% inst_id[["id"]],
                     cipcode == department.CIP,  
                     awlevel %in% aw_level) %>%
-      dplyr::group_by(unitid) %>%
+      dplyr::group_by(unitid, awlevel) %>%
       # Var definition (CRACE15): Grand total men
       # Var definition (CRACE16): Grand total women
       dplyr::summarise(n.students = sum(crace15) + sum(crace16)) %>%
       # match case of unitid so that `rbind` works
-      dplyr::rename(UNITID = unitid) %>%
-      dplyr::mutate(year = y)
+      dplyr::rename(UNITID = unitid)
 
-    # if no results are returned (empty df), return a data frame with 0 students
-    if (nrow(df) == 0) {df = empty_df(IPEDS.ID, y)}
+    df <- fill_missing(df, inst_id[["id"]], aw_level, y)
     total_degs <- rbind(total_degs, df)
   }
   
@@ -234,19 +237,17 @@ degrees_awarded <- function (inst = c("Berkeley"),
                              '"H"', '"J"', '"K"', '"L"', '"N"',
                              '"P"', '"R"', '"Z"', "NA"))
       df <- df %>%
-        dplyr::filter(unitid %in% IPEDS.ID,
+        dplyr::filter(unitid %in% inst_id[["id"]],
                       cipcode == department.CIP,  
                       awlevel %in% aw_level) %>%
-        dplyr::group_by(unitid) %>%
+        dplyr::group_by(unitid, awlevel) %>%
         # Var definition (CRACE15): Grand total men
         # Var definition (CRACE16): Grand total women
         dplyr::summarise(n.students = sum(crace15) + sum(crace16)) %>%
         # match case of unitid so that `rbind` works
-        dplyr::rename(UNITID = unitid) %>%
-        dplyr::mutate(year = 1900+y)
+        dplyr::rename(UNITID = unitid)
       
-      # if no results are returned (empty df), return a data frame with 0 students
-      if (nrow(df) == 0) {df = empty_df(IPEDS.ID, 1900+y)}
+      df <- fill_missing(df, inst_id[["id"]], aw_level, 1900+y)
       total_degs <- rbind(total_degs, df)
     }
     
@@ -262,19 +263,17 @@ degrees_awarded <- function (inst = c("Berkeley"),
                              '"H"', '"J"', '"K"', '"L"', '"N"',
                              '"P"', '"R"', '"Z"', "NA"))
       df <- df %>%
-        dplyr::filter(unitid %in% IPEDS.ID,
+        dplyr::filter(unitid %in% inst_id[["id"]],
                       cipcode == department.CIP,  
                       awlevel %in% aw_level) %>%
-        dplyr::group_by(unitid) %>%
+        dplyr::group_by(unitid, awlevel) %>%
         # Var definition (CRACE15): Grand total men
         # Var definition (CRACE16): Grand total women
         dplyr::summarise(n.students = sum(crace15) + sum(crace16)) %>%
         # match case of unitid so that `rbind` works
-        dplyr::rename(UNITID = unitid) %>%
-        dplyr::mutate(year = y)
+        dplyr::rename(UNITID = unitid)
       
-      # if no results are returned (empty df), return a data frame with 0 students
-      if (nrow(df) == 0) {df = empty_df(IPEDS.ID, y)}
+      df <- fill_missing(df, inst_id[["id"]], aw_level, y)
       total_degs <- rbind(total_degs, df)
     }
     
@@ -287,19 +286,17 @@ degrees_awarded <- function (inst = c("Berkeley"),
                            '"H"', '"J"', '"K"', '"L"', '"N"',
                            '"P"', '"R"', '"Z"', "NA"))
     df <- df %>%
-      dplyr::filter(unitid %in% IPEDS.ID,
+      dplyr::filter(unitid %in% inst_id[["id"]],
                     cipcode == department.CIP,  
                     awlevel %in% aw_level) %>%
-      dplyr::group_by(unitid) %>%
+      dplyr::group_by(unitid, awlevel) %>%
       # Var definition (CRACE15): Grand total men
       # Var definition (CRACE16): Grand total women
       dplyr::summarise(n.students = sum(crace15) + sum(crace16)) %>%
       # match case of unitid so that `rbind` works
-      dplyr::rename(UNITID = unitid) %>%
-      dplyr::mutate(year = 1990)
+      dplyr::rename(UNITID = unitid)
     
-    # if no results are returned (empty df), return a data frame with 0 students
-    if (nrow(df) == 0) {df = empty_df(IPEDS.ID, 1990)}
+    df <- fill_missing(df, inst_id[["id"]], aw_level, 1990)
     total_degs <- rbind(total_degs, df)
     
     # ----------------------------------------------------------------------
@@ -314,25 +311,35 @@ degrees_awarded <- function (inst = c("Berkeley"),
                              '"H"', '"J"', '"K"', '"L"', '"N"',
                              '"P"', '"R"', '"Z"', "NA"))
       df <- df %>%
-        dplyr::filter(unitid %in% IPEDS.ID,
+        dplyr::filter(unitid %in% inst_id[["id"]],
                       cipcode == department.CIP,  
                       awlevel %in% aw_level) %>%
-        dplyr::group_by(unitid) %>%
+        dplyr::group_by(unitid, awlevel) %>%
         # Var definition (CRACE15): Grand total men
         # Var definition (CRACE16): Grand total women
         dplyr::summarise(n.students = sum(crace15) + sum(crace16)) %>%
         # match case of unitid so that `rbind` works
-        dplyr::rename(UNITID = unitid) %>%
-        dplyr::mutate(year = y)
+        dplyr::rename(UNITID = unitid)
       
-      # if no results are returned (empty df), return a data frame with 0 students
-      if (nrow(df) == 0) {df = empty_df(IPEDS.ID, y)}
+      df <- fill_missing(df, inst_id[["id"]], aw_level, y)
       total_degs <- rbind(total_degs, df)
     }
   }
-  total_degs %>% 
-    rename(id = UNITID) %>%
-    arrange(-year)
+  
+  total_degs <- total_degs %>% 
+    dplyr::rename(id = UNITID) %>%
+    dplyr::arrange(id, -year) %>%
+    # add name of institution (match based on `id`)
+    dplyr::inner_join(inst_id, by = "id") %>%
+    dplyr::select(-inst_name) %>% 
+    # add deg type (match based on `level`)
+    dplyr::inner_join(data.frame(level = c(5,7,9,17),
+                          deg = c("bachelors", "masters", "doctorate", "doctorate")),
+                      by = "level") %>%
+    # change order
+    dplyr::select(short_name, deg, year, n.students) %>%
+    rename(name = short_name)
 }
 
-zzz <- degrees_awarded(deg_type = "doctorate")
+zzz <- degrees_awarded(inst = c("Berkeley", "Harvard"), 
+                       deg_type = c("doctorate", "bachelors"), full.data = TRUE)
