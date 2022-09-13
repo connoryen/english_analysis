@@ -3,7 +3,7 @@ requiredPackages = c('lubridate',
                      'data.table',
                      'roxygen2',
                      'tidyverse',
-                     'dplyr')
+                     'DescTools')
 
 # for each package, install and load if not present. If present, load
 for(p in requiredPackages){
