@@ -1,9 +1,25 @@
-# ======================================================================
-# FUNCTIONS
-# ======================================================================
+# ----------------------------------------------------------------------
+# get IDs of schools
+# ----------------------------------------------------------------------
+
+# get name and ids of inst. w/ an English PhD granting program
+ids <- read.csv("data/NCES_Inst_Details/English PhD granting Universities 2017-18.csv")
+ids <- ids %>% 
+  dplyr::select(UnitID, Institution.Name) %>%
+  dplyr::rename(id = UnitID, name = Institution.Name)
+
+test1 <- function(inst = c("Berkeley")){
+  inst_id <- paste(inst, collapse = "|")
+  inst_id <- ids %>%
+    dplyr::filter(grepl(inst_id, name))
+  
+  if (nrow(inst_id) != length(inst)) stop("`inst` is invalid")
+  print(inst_id)
+}
+test1(c("Berkeley", "Los Angeles"))
 
 # ----------------------------------------------------------------------
-#Total number of degrees awarded by a University's Department per year.
+# Total number of degrees awarded by a University's Department per year.
 # ----------------------------------------------------------------------
 
 #' Number of Degrees Awarded by a University's Department per Year
@@ -30,18 +46,33 @@
 #' @examples
 #' degrees_awarded(deg_type = "doctorate", full.data = TRUE)
 #' 
-degrees_awarded <- function (IPEDS.ID = c(110635), 
+degrees_awarded <- function (inst = c("Berkeley"),
+                             IPEDS.ID = c(110635), 
                              department.CIP = 230101, 
                              deg_type = c("bachelors", "masters", "doctorate"),
                              data_directory = "data/IPEDS_Completions/",
                              full.data = FALSE) {
-
-  deg_type = match.arg(deg_type)
+  # ----------------------------------------------------------------------
+  # Check Inputs
+  # ----------------------------------------------------------------------
+  inst_id <- paste(inst, collapse = "|")
+  inst_id <- ids %>%
+    dplyr::filter(grepl(inst_id, name))
   
+  # check that inst_id is as expected
+  if (nrow(inst_id) != length(inst)) stop("`inst` is invalid")
+  # check if degree type is one of bachelors, masters, or doctorate
+  deg_type = match.arg(deg_type)
+  # check if data_directory is a valid directory
+  if(!dir.exists(data_directory)) stop("`data_directory` does not exist")
+  
+  # ----------------------------------------------------------------------
+  # Preliminaries
+  # ----------------------------------------------------------------------
+  # convert deg_type to aw_level
   if (deg_type == "bachelors") {aw_level = 5} else 
     if (deg_type == "masters") {aw_level = 7} else 
-    if (deg_type == "doctorate") {aw_level = c(17, 18, 19)} else
-    {aw_level = c(5, 7, 17, 18, 19)}
+    {aw_level = c(17, 18, 19)}
   
   # create an empty data frame if a year returns no results
   empty_df <- function(id, year) {
@@ -53,7 +84,7 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
   # ----------------------------------------------------------------------
   # 2011 - 2020
   # ----------------------------------------------------------------------
-  total_degs <- data.frame(matrix(ncol = 3, nrow = 0))
+  total_degs <- data.frame(matrix(ncol = 4, nrow = 0))
   
   for (y in c(2011:2020)){
     file_name <- paste0(data_directory, "c", 
@@ -299,5 +330,9 @@ degrees_awarded <- function (IPEDS.ID = c(110635),
       total_degs <- rbind(total_degs, df)
     }
   }
-  total_degs %>% arrange(-year)
+  total_degs %>% 
+    rename(id = UNITID) %>%
+    arrange(-year)
 }
+
+zzz <- degrees_awarded(deg_type = "doctorate")
