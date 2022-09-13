@@ -2,7 +2,8 @@
 requiredPackages = c('lubridate',
                      'data.table',
                      'roxygen2',
-                     'tidyverse')
+                     'tidyverse',
+                     'dplyr')
 
 # for each package, install and load if not present. If present, load
 for(p in requiredPackages){
